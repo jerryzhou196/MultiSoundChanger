@@ -24,6 +24,7 @@ protocol Audio {
     func getDeviceVolume(deviceID: AudioDeviceID) -> [Float]
     func getDefaultOutputDevice() -> AudioDeviceID
     func getDeviceTransportType(deviceID: AudioDeviceID) -> AudioDevicePropertyID
+    func getDeviceName(deviceID: AudioDeviceID) -> String
 }
 
 // MARK: - Implementation
@@ -242,7 +243,7 @@ final class AudioImpl: Audio {
         return propertySize / UInt32(MemoryLayout<AudioDeviceID>.size)
     }
     
-    private func getDeviceName(deviceID: AudioDeviceID) -> String {
+    func getDeviceName(deviceID: AudioDeviceID) -> String {
         var propertySize = UInt32(MemoryLayout<CFString>.size)
         
         var propertyAddress = AudioObjectPropertyAddress(

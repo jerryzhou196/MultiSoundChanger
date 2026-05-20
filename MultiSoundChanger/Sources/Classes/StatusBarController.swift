@@ -37,7 +37,6 @@ final class StatusBarControllerImpl: StatusBarController {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let volumeController: VolumeViewController
     private let audioManager: AudioManager
-    
     init(audioManager: AudioManager) {
         self.audioManager = audioManager
         
@@ -138,9 +137,9 @@ final class StatusBarControllerImpl: StatusBarController {
         guard let devices = audioManager.getOutputDevices() else {
             return
         }
-        
+
         let defaultDevice = audioManager.getDefaultOutputDevice()
-        
+
         for device in devices {
             let item = NSMenuItem(
                 title: truncate(device.value, length: Constants.optionMaxLength),
@@ -149,14 +148,43 @@ final class StatusBarControllerImpl: StatusBarController {
             )
             item.target = self
             item.tag = Int(device.key)
-            
+
             if device.key == defaultDevice {
                 item.state = .on
                 selectDevice(device: defaultDevice)
             }
-            
+
             menu.addItem(item)
+
+            if audioManager.isBoostableDevice(deviceID: device.key) {
+                menu.addItem(makeBoostSliderItem(for: device.key))
+            }
         }
+    }
+
+    private func makeBoostSliderItem(for deviceID: AudioDeviceID) -> NSMenuItem {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
+
+        let label = NSTextField(labelWithString: "Boost:")
+        label.frame = NSRect(x: 18, y: 4, width: 38, height: 14)
+        label.font = NSFont.systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+
+        let slider = NSSlider(frame: NSRect(x: 58, y: 4, width: 144, height: 14))
+        slider.minValue = 0
+        slider.maxValue = 100
+        slider.floatValue = audioManager.getDeviceBoost(deviceID: deviceID) * 100
+        slider.tag = Int(deviceID)
+        slider.target = self
+        slider.action = #selector(boostSliderAction)
+        slider.isContinuous = true
+
+        view.addSubview(label)
+        view.addSubview(slider)
+
+        let item = NSMenuItem(title: String(), action: nil, keyEquivalent: String())
+        item.view = view
+        return item
     }
     
     private func selectDevice(device: AudioDeviceID) {
@@ -193,6 +221,12 @@ final class StatusBarControllerImpl: StatusBarController {
         }
     }
     
+    @objc
+    private func boostSliderAction(_ sender: NSSlider) {
+        let deviceID = AudioDeviceID(sender.tag)
+        audioManager.setDeviceBoost(deviceID: deviceID, boost: sender.floatValue / 100)
+    }
+
     @objc
     private func menuSoundPreferencesAction() {
         Runner.shell("open -b \(Constants.AppBundleIdentifier.systemPreferences) \(Constants.SystemPreferencesPane.sound)")

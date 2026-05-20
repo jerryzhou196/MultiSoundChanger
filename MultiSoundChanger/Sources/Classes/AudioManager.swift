@@ -19,7 +19,10 @@ protocol AudioManager: class {
     func setSelectedDeviceVolume(masterChannelLevel: Float, leftChannelLevel: Float, rightChannelLevel: Float)
     func isSelectedDeviceMuted() -> Bool
     func toggleMute()
-    
+    func isBoostableDevice(deviceID: AudioDeviceID) -> Bool
+    func getDeviceBoost(deviceID: AudioDeviceID) -> Float
+    func setDeviceBoost(deviceID: AudioDeviceID, boost: Float)
+
     var isMuted: Bool { get }
 }
 
@@ -29,9 +32,15 @@ final class AudioManagerImpl: AudioManager {
     private let audio: Audio = AudioImpl()
     private let devices: [AudioDeviceID: String]?
     private var selectedDevice: AudioDeviceID?
-    
+    private var deviceBoosts: [AudioDeviceID: Float] = [:]
+
     init() {
         devices = audio.getOutputDevices()
+        if let devices = devices {
+            for deviceID in devices.keys where !audio.isAggregateDevice(deviceID: deviceID) {
+                deviceBoosts[deviceID] = 0.0
+            }
+        }
         printDevices()
     }
     
@@ -41,10 +50,6 @@ final class AudioManagerImpl: AudioManager {
     
     func getOutputDevices() -> [AudioDeviceID: String]? {
         return devices
-    }
-    
-    func isAggregateDevice(deviceID: AudioDeviceID) -> Bool {
-        return audio.isAggregateDevice(deviceID: deviceID)
     }
     
     func selectDevice(deviceID: AudioDeviceID) {
@@ -77,34 +82,46 @@ final class AudioManagerImpl: AudioManager {
         guard let selectedDevice = selectedDevice else {
             return
         }
-        
+
         let isMute = masterChannelLevel < Constants.muteVolumeLowerbound
             && leftChannelLevel < Constants.muteVolumeLowerbound
             && rightChannelLevel < Constants.muteVolumeLowerbound
-        
+
+        func apply(to device: AudioDeviceID) {
+            let boost = deviceBoosts[device] ?? 0.0
+            audio.setDeviceVolume(
+                deviceID: device,
+                masterChannelLevel: min(masterChannelLevel + boost, 1.0),
+                leftChannelLevel: min(leftChannelLevel + boost, 1.0),
+                rightChannelLevel: min(rightChannelLevel + boost, 1.0)
+            )
+            audio.setDeviceMute(deviceID: device, isMute: isMute)
+        }
+
         if audio.isAggregateDevice(deviceID: selectedDevice) {
-            let aggregatedDevices = audio.getAggregateDeviceSubDeviceList(deviceID: selectedDevice)
-            
-            for device in aggregatedDevices {
-                audio.setDeviceVolume(
-                    deviceID: device,
-                    masterChannelLevel: masterChannelLevel,
-                    leftChannelLevel: leftChannelLevel,
-                    rightChannelLevel: rightChannelLevel
-                )
-                audio.setDeviceMute(deviceID: device, isMute: isMute)
+            for device in audio.getAggregateDeviceSubDeviceList(deviceID: selectedDevice) {
+                apply(to: device)
             }
         } else {
-            audio.setDeviceVolume(
-                deviceID: selectedDevice,
-                masterChannelLevel: masterChannelLevel,
-                leftChannelLevel: leftChannelLevel,
-                rightChannelLevel: rightChannelLevel
-            )
-            audio.setDeviceMute(deviceID: selectedDevice, isMute: isMute)
+            apply(to: selectedDevice)
         }
     }
     
+    func isBoostableDevice(deviceID: AudioDeviceID) -> Bool {
+        return !audio.isAggregateDevice(deviceID: deviceID)
+    }
+
+    func getDeviceBoost(deviceID: AudioDeviceID) -> Float {
+        return deviceBoosts[deviceID] ?? 0.0
+    }
+
+    func setDeviceBoost(deviceID: AudioDeviceID, boost: Float) {
+        deviceBoosts[deviceID] = boost
+        if let v = getSelectedDeviceVolume() {
+            setSelectedDeviceVolume(masterChannelLevel: v, leftChannelLevel: v, rightChannelLevel: v)
+        }
+    }
+
     func setSelectedDeviceMute(isMute: Bool) {
         guard let selectedDevice = selectedDevice else {
             return

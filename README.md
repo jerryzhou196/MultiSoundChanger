@@ -11,11 +11,16 @@ A small tool for changing sound volume **even for aggregate devices** cause nati
 
 Features:
 * **Changing sound volume of every device** (even virtual aggregate device volume by changing volume of every device in aggregate device)
+* **Per-device boost offsets** — each output device gets a "Boost" slider in the menu that adds a constant volume offset on top of the master level, useful for compensating when one speaker in an aggregate device is naturally louder or quieter than the others
 * Changing default output device
 * Native appearance (looks like native volume controller)
 * Media keys support
 
 I think it can be very useful if you're using VoodooHDA with 4.0+ sound on the board (my use case), but you can find another use cases.
+
+## Per-device Boost
+
+When you have an aggregate device combining multiple speakers, they often have different natural loudness levels. The boost slider (shown below each device in the menu) lets you dial in a constant offset (0–100%) that is added to that device's volume whenever the master level is set — so all your speakers stay balanced relative to each other.
 
 ## Usage
 

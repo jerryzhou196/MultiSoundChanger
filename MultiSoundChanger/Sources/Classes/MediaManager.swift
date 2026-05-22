@@ -18,6 +18,8 @@ protocol MediaManagerDelegate: class {
 
 protocol MediaManager: class {
     func listenMediaKeyTaps()
+    func startIntercepting()
+    func stopIntercepting()
     func showOSD(volume: Float, chicletsCount: Int)
 }
 
@@ -26,6 +28,7 @@ protocol MediaManager: class {
 final class MediaManagerImpl: MediaManager {
     private weak var delegate: MediaManagerDelegate?
     private var mediaKeyTap: MediaKeyTap?
+    private var isIntercepting: Bool = false
     
     init(delegate: MediaManagerDelegate) {
         self.delegate = delegate
@@ -36,10 +39,22 @@ final class MediaManagerImpl: MediaManager {
     }
     
     // MARK: Public
-    
+
     func listenMediaKeyTaps() {
         observeMediaKeyOnAccessibiltiyApiChange()
+        isIntercepting = true
         startMediaKeyTap()
+    }
+
+    func startIntercepting() {
+        isIntercepting = true
+        startMediaKeyTap()
+    }
+
+    func stopIntercepting() {
+        isIntercepting = false
+        mediaKeyTap?.stop()
+        mediaKeyTap = nil
     }
     
     func showOSD(volume: Float, chicletsCount: Int = 16) {
@@ -111,6 +126,7 @@ final class MediaManagerImpl: MediaManager {
     
     @objc
     private func onAccessibilityNotification(_ aNotification: Notification) {
+        guard isIntercepting else { return }
         DispatchQueue.main.async { [weak self] in
             self?.startMediaKeyTap()
         }

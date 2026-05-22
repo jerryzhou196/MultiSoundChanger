@@ -18,6 +18,7 @@ protocol AudioManager: class {
     func getSelectedDeviceVolume() -> Float?
     func setSelectedDeviceVolume(masterChannelLevel: Float, leftChannelLevel: Float, rightChannelLevel: Float)
     func isSelectedDeviceMuted() -> Bool
+    func isSelectedDeviceAggregate() -> Bool
     func toggleMute()
     func isBoostableDevice(deviceID: AudioDeviceID) -> Bool
     func getDeviceBoost(deviceID: AudioDeviceID) -> Float
@@ -138,6 +139,11 @@ final class AudioManagerImpl: AudioManager {
         }
     }
     
+    func isSelectedDeviceAggregate() -> Bool {
+        guard let selectedDevice = selectedDevice else { return false }
+        return audio.isAggregateDevice(deviceID: selectedDevice)
+    }
+
     func isSelectedDeviceMuted() -> Bool {
         guard let selectedDevice = selectedDevice else {
             return false

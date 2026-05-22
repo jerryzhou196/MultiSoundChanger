@@ -11,7 +11,12 @@ import Cocoa
 
 // MARK: - Protocols
 
+protocol StatusBarControllerDelegate: AnyObject {
+    func didSelectDevice(deviceID: AudioDeviceID)
+}
+
 protocol StatusBarController: class {
+    var delegate: StatusBarControllerDelegate? { get set }
     func createMenu()
     func changeStatusItemImage(value: Float)
     func updateVolume(value: Float)
@@ -37,6 +42,8 @@ final class StatusBarControllerImpl: StatusBarController {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let volumeController: VolumeViewController
     private let audioManager: AudioManager
+    weak var delegate: StatusBarControllerDelegate?
+
     init(audioManager: AudioManager) {
         self.audioManager = audioManager
         
@@ -189,6 +196,7 @@ final class StatusBarControllerImpl: StatusBarController {
     
     private func selectDevice(device: AudioDeviceID) {
         audioManager.selectDevice(deviceID: device)
+        delegate?.didSelectDevice(deviceID: device)
         guard let volume = audioManager.getSelectedDeviceVolume() else {
             return
         }

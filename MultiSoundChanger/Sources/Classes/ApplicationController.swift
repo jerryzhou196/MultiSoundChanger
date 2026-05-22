@@ -6,6 +6,7 @@
 //  Copyright © 2021 Dmitry Medyuho. All rights reserved.
 //
 
+import AudioToolbox
 import Foundation
 import MediaKeyTap
 
@@ -23,8 +24,24 @@ final class ApplicationControllerImp: ApplicationController {
     private lazy var statusBarController: StatusBarController = StatusBarControllerImpl(audioManager: audioManager)
     
     func start() {
+        statusBarController.delegate = self
         statusBarController.createMenu()
         mediaManager.listenMediaKeyTaps()
+        if !audioManager.isSelectedDeviceAggregate() {
+            mediaManager.stopIntercepting()
+        }
+    }
+}
+
+// MARK: - StatusBarControllerDelegate
+
+extension ApplicationControllerImp: StatusBarControllerDelegate {
+    func didSelectDevice(deviceID: AudioDeviceID) {
+        if audioManager.isSelectedDeviceAggregate() {
+            mediaManager.startIntercepting()
+        } else {
+            mediaManager.stopIntercepting()
+        }
     }
 }
 

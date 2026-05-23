@@ -42,6 +42,9 @@ final class StatusBarControllerImpl: StatusBarController {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let volumeController: VolumeViewController
     private let audioManager: AudioManager
+    private var boostValueLabels: [AudioDeviceID: NSTextField] = [:]
+    private var stepSizeTextFields: [AudioDeviceID: NSTextField] = [:]
+    private var stepSizeSteppers: [AudioDeviceID: NSStepper] = [:]
     weak var delegate: StatusBarControllerDelegate?
 
     init(audioManager: AudioManager) {
@@ -165,22 +168,38 @@ final class StatusBarControllerImpl: StatusBarController {
 
             if audioManager.isBoostableDevice(deviceID: device.key) {
                 menu.addItem(makeBoostSliderItem(for: device.key))
+                menu.addItem(makeStepSizeInputItem(for: device.key))
             }
         }
     }
 
+    private func boostDisplayString(_ value: Int) -> String {
+        return value > 0 ? "+\(value)%" : "\(value)%"
+    }
+
     private func makeBoostSliderItem(for deviceID: AudioDeviceID) -> NSMenuItem {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 26))
 
         let label = NSTextField(labelWithString: "Boost:")
-        label.frame = NSRect(x: 18, y: 4, width: 38, height: 14)
+        label.frame = NSRect(x: 18, y: 6, width: 38, height: 14)
         label.font = NSFont.systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
 
-        let slider = NSSlider(frame: NSRect(x: 58, y: 4, width: 144, height: 14))
-        slider.minValue = 0
-        slider.maxValue = 100
-        slider.floatValue = audioManager.getDeviceBoost(deviceID: deviceID) * 100
+        let currentBoostPct = Int(audioManager.getDeviceBoost(deviceID: deviceID) * 100)
+
+        let valueLabel = NSTextField(labelWithString: boostDisplayString(currentBoostPct))
+        valueLabel.frame = NSRect(x: 174, y: 6, width: 32, height: 14)
+        valueLabel.font = NSFont.systemFont(ofSize: 11)
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.alignment = .right
+        boostValueLabels[deviceID] = valueLabel
+
+        let slider = NSSlider(frame: NSRect(x: 58, y: 3, width: 114, height: 20))
+        slider.minValue = -50
+        slider.maxValue = 50
+        slider.floatValue = Float(currentBoostPct)
+        slider.numberOfTickMarks = 11
+        slider.allowsTickMarkValuesOnly = true
         slider.tag = Int(deviceID)
         slider.target = self
         slider.action = #selector(boostSliderAction)
@@ -188,6 +207,7 @@ final class StatusBarControllerImpl: StatusBarController {
 
         view.addSubview(label)
         view.addSubview(slider)
+        view.addSubview(valueLabel)
 
         let item = NSMenuItem(title: String(), action: nil, keyEquivalent: String())
         item.view = view
@@ -232,7 +252,68 @@ final class StatusBarControllerImpl: StatusBarController {
     @objc
     private func boostSliderAction(_ sender: NSSlider) {
         let deviceID = AudioDeviceID(sender.tag)
-        audioManager.setDeviceBoost(deviceID: deviceID, boost: sender.floatValue / 100)
+        let value = Int(sender.floatValue)
+        audioManager.setDeviceBoost(deviceID: deviceID, boost: Float(value) / 100)
+        boostValueLabels[deviceID]?.stringValue = boostDisplayString(value)
+    }
+
+    private func makeStepSizeInputItem(for deviceID: AudioDeviceID) -> NSMenuItem {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 26))
+
+        let label = NSTextField(labelWithString: "Step size:")
+        label.frame = NSRect(x: 18, y: 6, width: 58, height: 14)
+        label.font = NSFont.systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+
+        let currentStepSize = audioManager.getDeviceStepSize(deviceID: deviceID)
+
+        let textField = NSTextField(frame: NSRect(x: 80, y: 4, width: 48, height: 18))
+        textField.stringValue = String(format: "%.1f", currentStepSize)
+        textField.font = NSFont.systemFont(ofSize: 11)
+        textField.isEditable = true
+        textField.isBordered = true
+        textField.bezelStyle = .squareBezel
+        textField.tag = Int(deviceID)
+        textField.target = self
+        textField.action = #selector(stepSizeTextFieldAction)
+        stepSizeTextFields[deviceID] = textField
+
+        let stepper = NSStepper(frame: NSRect(x: 130, y: 4, width: 19, height: 18))
+        stepper.minValue = 0.1
+        stepper.maxValue = 1.0
+        stepper.increment = 0.1
+        stepper.doubleValue = Double(currentStepSize)
+        stepper.valueWraps = false
+        stepper.tag = Int(deviceID)
+        stepper.target = self
+        stepper.action = #selector(stepSizeStepperAction)
+        stepSizeSteppers[deviceID] = stepper
+
+        view.addSubview(label)
+        view.addSubview(textField)
+        view.addSubview(stepper)
+
+        let item = NSMenuItem(title: String(), action: nil, keyEquivalent: String())
+        item.view = view
+        return item
+    }
+
+    @objc
+    private func stepSizeTextFieldAction(_ sender: NSTextField) {
+        let deviceID = AudioDeviceID(sender.tag)
+        let raw = Float(sender.stringValue) ?? 1.0
+        let clamped = max(0.1, min(1.0, raw))
+        sender.stringValue = String(format: "%.1f", clamped)
+        audioManager.setDeviceStepSize(deviceID: deviceID, stepSize: clamped)
+        stepSizeSteppers[deviceID]?.doubleValue = Double(clamped)
+    }
+
+    @objc
+    private func stepSizeStepperAction(_ sender: NSStepper) {
+        let deviceID = AudioDeviceID(sender.tag)
+        let value = Float(sender.doubleValue)
+        audioManager.setDeviceStepSize(deviceID: deviceID, stepSize: value)
+        stepSizeTextFields[deviceID]?.stringValue = String(format: "%.1f", value)
     }
 
     @objc

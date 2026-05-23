@@ -52,19 +52,20 @@ extension ApplicationControllerImp: MediaManagerDelegate {
         guard let selectedDeviceVolume = audioManager.getSelectedDeviceVolume() else {
             return
         }
+        Logger.warning("selectedDeviceVolume:" + String(selectedDeviceVolume))
         
         let volumeStep: Float = 1 / Float(Constants.chicletsCount)
         var volume: Float = (selectedDeviceVolume / volumeStep).rounded() * volumeStep
-        
+
         switch mediaKey {
         case .volumeUp:
             volume = (volume + volumeStep).clamped(to: 0...1)
             audioManager.setSelectedDeviceVolume(masterChannelLevel: volume, leftChannelLevel: volume, rightChannelLevel: volume)
-            
+
         case .volumeDown:
             volume = (volume - volumeStep).clamped(to: 0...1)
             audioManager.setSelectedDeviceVolume(masterChannelLevel: volume, leftChannelLevel: volume, rightChannelLevel: volume)
-            
+
         case .mute:
             audioManager.toggleMute()
             if audioManager.isSelectedDeviceMuted() {
@@ -72,13 +73,13 @@ extension ApplicationControllerImp: MediaManagerDelegate {
             } else {
                 volume = audioManager.getSelectedDeviceVolume() ?? 0
             }
-            
+
         default:
             break
         }
-        
+
         let correctedVolume = volume * 100
-        
+
         statusBarController.updateVolume(value: correctedVolume)
         mediaManager.showOSD(volume: correctedVolume, chicletsCount: Constants.chicletsCount)
         

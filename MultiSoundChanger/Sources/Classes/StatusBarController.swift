@@ -40,7 +40,7 @@ extension StatusBarControllerImpl {
 
 final class StatusBarControllerImpl: StatusBarController {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let volumeController: VolumeViewController
+    private var volumeController: VolumeViewController
     private let audioManager: AudioManager
     private var boostValueLabels: [AudioDeviceID: NSTextField] = [:]
     private var stepSizeTextFields: [AudioDeviceID: NSTextField] = [:]
@@ -49,17 +49,27 @@ final class StatusBarControllerImpl: StatusBarController {
 
     init(audioManager: AudioManager) {
         self.audioManager = audioManager
-        
         self.volumeController = Stories.volume.controller(VolumeViewController.self)
-        self.volumeController.audioManager = audioManager
-        self.volumeController.statusBarController = self
     }
     
+    private func makeVolumeController() -> VolumeViewController {
+        let vc = Stories.volume.controller(VolumeViewController.self)
+        vc.audioManager = audioManager
+        vc.statusBarController = self
+        return vc
+    }
+
     func createMenu() {
+        Logger.debug("re-creating the Menu")
+        volumeController = makeVolumeController()
+        boostValueLabels.removeAll()
+        stepSizeTextFields.removeAll()
+        stepSizeSteppers.removeAll()
+
         if let button = statusItem.button {
             button.image = Images.volumeImage1
         }
-        
+
         let menu = NSMenu()
         menu.autoenablesItems = false
         

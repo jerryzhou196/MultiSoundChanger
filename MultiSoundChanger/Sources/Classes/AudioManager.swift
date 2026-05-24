@@ -9,6 +9,13 @@
 import AudioToolbox
 import Foundation
 
+// MARK: - DeviceConfig
+
+private struct DeviceConfig: Codable {
+    var boost: Float
+    var stepSize: Float
+}
+
 // MARK: - Protocols
 
 protocol AudioManager: class {
@@ -25,8 +32,10 @@ protocol AudioManager: class {
     func setDeviceBoost(deviceID: AudioDeviceID, boost: Float)
     func getDeviceStepSize(deviceID: AudioDeviceID) -> Float
     func setDeviceStepSize(deviceID: AudioDeviceID, stepSize: Float)
+    func reloadDevices()
 
     var isMuted: Bool { get }
+    var onDeviceListChanged: (() -> Void)? { get set }
 }
 
 // MARK: - MasterControlDevice
@@ -35,15 +44,44 @@ private struct MasterControlDevice {
     var volume: Float = 0.0
 }
 
+// MARK: - Device list change listener (C callback required by AudioObjectAddPropertyListener)
+
+private func audioDeviceListChangedCallback(
+    _ objectID: AudioObjectID,
+    _ numAddresses: UInt32,
+    _ addresses: UnsafePointer<AudioObjectPropertyAddress>,
+    _ clientData: UnsafeMutableRawPointer?
+) -> OSStatus {
+    guard let ptr = clientData else { return noErr }
+    let manager = Unmanaged<AudioManagerImpl>.fromOpaque(ptr).takeUnretainedValue()
+    DispatchQueue.main.async { manager.scheduleDeviceListReload() }
+    return noErr
+}
+
 // MARK: - Implementation
 
 final class AudioManagerImpl: AudioManager {
     private let audio: Audio = AudioImpl()
-    private let devices: [AudioDeviceID: String]?
+    private var devices: [AudioDeviceID: String]?
     private var selectedDevice: AudioDeviceID?
     private var deviceBoosts: [AudioDeviceID: Float] = [:]
     private var deviceStepSizes: [AudioDeviceID: Float] = [:]
     private var masterControl = MasterControlDevice()
+    var onDeviceListChanged: (() -> Void)?
+    private var pendingReload: DispatchWorkItem?
+
+    private static var settingsFileURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("MultiSoundChanger", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("device-settings.json")
+    }
+
+    private static var deviceListPropertyAddress = AudioObjectPropertyAddress(
+        mSelector: AudioObjectPropertySelector(kAudioHardwarePropertyDevices),
+        mScope: AudioObjectPropertyScope(kAudioObjectPropertyScopeGlobal),
+        mElement: AudioObjectPropertyElement(kAudioObjectPropertyElementMaster)
+    )
 
     init() {
         devices = audio.getOutputDevices()
@@ -53,7 +91,72 @@ final class AudioManagerImpl: AudioManager {
                 deviceStepSizes[deviceID] = 1.0
             }
         }
+        loadSettings()
+        AudioObjectAddPropertyListener(
+            AudioObjectID(kAudioObjectSystemObject),
+            &AudioManagerImpl.deviceListPropertyAddress,
+            audioDeviceListChangedCallback,
+            Unmanaged.passUnretained(self).toOpaque()
+        )
         printDevices()
+    }
+
+    deinit {
+        AudioObjectRemovePropertyListener(
+            AudioObjectID(kAudioObjectSystemObject),
+            &AudioManagerImpl.deviceListPropertyAddress,
+            audioDeviceListChangedCallback,
+            Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
+
+    fileprivate func scheduleDeviceListReload() {
+        pendingReload?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.reloadDevices()
+            self?.onDeviceListChanged?()
+        }
+        pendingReload = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    func reloadDevices() {
+        devices = audio.getOutputDevices()
+        if let devices = devices {
+            for deviceID in devices.keys where !audio.isAggregateDevice(deviceID: deviceID) {
+                if deviceBoosts[deviceID] == nil { deviceBoosts[deviceID] = 0.0 }
+                if deviceStepSizes[deviceID] == nil { deviceStepSizes[deviceID] = 1.0 }
+            }
+        }
+        loadSettings()
+        printDevices()
+    }
+
+    private func loadSettings() {
+        guard let devices = devices,
+              let data = try? Data(contentsOf: AudioManagerImpl.settingsFileURL),
+              let saved = try? JSONDecoder().decode([String: DeviceConfig].self, from: data) else { return }
+        let nameToID = Dictionary(uniqueKeysWithValues: devices.map { ($1, $0) })
+        for (name, config) in saved {
+            guard let deviceID = nameToID[name],
+                  !audio.isAggregateDevice(deviceID: deviceID) else { continue }
+            deviceBoosts[deviceID] = config.boost
+            deviceStepSizes[deviceID] = config.stepSize
+        }
+    }
+
+    private func saveSettings() {
+        guard let devices = devices else { return }
+        var settings: [String: DeviceConfig] = [:]
+        for (deviceID, name) in devices where !audio.isAggregateDevice(deviceID: deviceID) {
+            settings[name] = DeviceConfig(
+                boost: deviceBoosts[deviceID] ?? 0.0,
+                stepSize: deviceStepSizes[deviceID] ?? 1.0
+            )
+        }
+        if let data = try? JSONEncoder().encode(settings) {
+            try? data.write(to: AudioManagerImpl.settingsFileURL, options: .atomic)
+        }
     }
 
     func getDefaultOutputDevice() -> AudioDeviceID {
@@ -130,6 +233,7 @@ final class AudioManagerImpl: AudioManager {
 
     func setDeviceBoost(deviceID: AudioDeviceID, boost: Float) {
         deviceBoosts[deviceID] = boost
+        saveSettings()
         if let v = getSelectedDeviceVolume() {
             setSelectedDeviceVolume(masterChannelLevel: v, leftChannelLevel: v, rightChannelLevel: v)
         }
@@ -141,6 +245,7 @@ final class AudioManagerImpl: AudioManager {
 
     func setDeviceStepSize(deviceID: AudioDeviceID, stepSize: Float) {
         deviceStepSizes[deviceID] = stepSize
+        saveSettings()
         if let v = getSelectedDeviceVolume() {
             setSelectedDeviceVolume(masterChannelLevel: v, leftChannelLevel: v, rightChannelLevel: v)
         }

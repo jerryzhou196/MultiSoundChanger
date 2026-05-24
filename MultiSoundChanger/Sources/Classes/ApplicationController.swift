@@ -30,6 +30,9 @@ final class ApplicationControllerImp: ApplicationController {
         if !audioManager.isSelectedDeviceAggregate() {
             mediaManager.stopIntercepting()
         }
+        audioManager.onDeviceListChanged = { [weak self] in
+            self?.statusBarController.createMenu()
+        }
     }
 }
 
